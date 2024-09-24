@@ -1,227 +1,230 @@
-from flask import Flask, request, render_template_string
-
-app = Flask(__name__)
-
-
-# Grade calculation functions
-def calculate_attendance(absences):
-    if absences > 4:
-        return 0  # Automatic fail for attendance
-    attendance = 100 - (absences * 10)
-    return max(0, attendance)
-
-def calculate_class_standing(quiz, requirements, recitation):
-    class_standing = (0.40 * quiz) + (0.30 * requirements) + (0.30 * recitation)
-    return class_standing
-
-def calculate_prelim_grade(prelim_exam, attendance, class_standing):
-    prelim_grade = (0.60 * prelim_exam) + (0.10 * attendance) + (0.30 * class_standing)
-    return prelim_grade
-
-def calculate_midterm_finals_targets(prelim_grade):
-    total_terms = 3
-    remaining_terms = total_terms - 1  # Only midterm and finals are left
-
-    target_midterm_deans_lister = ((90 * total_terms) - prelim_grade) / remaining_terms
-    target_finals_deans_lister = target_midterm_deans_lister  # Same for finals
-
-    target_midterm_avoid_fail = ((75 * total_terms) - prelim_grade) / remaining_terms
-    target_finals_avoid_fail = target_midterm_avoid_fail  # Same for finals
-
-    target_midterm_deans_lister = min(max(target_midterm_deans_lister, 90), 100)
-    target_finals_deans_lister = min(max(target_finals_deans_lister, 90), 100)
-    target_midterm_avoid_fail = min(max(target_midterm_avoid_fail, 75), 100)
-    target_finals_avoid_fail = min(max(target_finals_avoid_fail, 75), 100)
-
-    return (target_midterm_deans_lister, target_finals_deans_lister, 
-            target_midterm_avoid_fail, target_finals_avoid_fail)
-
-# HTML Template for the form and result
-# HTML Template for the form and result
-form_template = '''
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Grade Calculator</title>
+    <!-- Include PyScript -->
+    <link rel="stylesheet" href="https://pyscript.net/latest/pyscript.css" />
+    <script defer src="https://pyscript.net/latest/pyscript.js"></script>
     <style>
         body {
-            font-family: Times New Roman, sans-serif;
-            background-color: #39505C;
+            font-family: Arial, sans-serif;
             margin: 0;
             padding: 0;
+            background-color: #87CEEB; /* Light blue background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
         }
+        
         .container {
-            width: 50%;
-            margin: auto;
-            padding: 50px;
-            border: 2px solid #333;
+            width: 20%;
+            padding: 20px;
+            border: 1px solid #4682B4; /* Blue border */
             border-radius: 10px;
-            background-color: #DBE4EB;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-            margin-top: 50px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            background-color: #ADD8E6; /* Light blue background */
         }
+        
         h1 {
             text-align: center;
-            color: #333;
+            color: #00008B; /* Dark blue text */
         }
+        
         input {
-            width: 95%;
+            width: 90%;
             padding: 10px;
             margin: 10px 0;
-            border: 1px solid #4f3f3e;
+            border: 1px solid #4682B4; /* Blue border */
             border-radius: 5px;
-            transition: border-color 0.3s;
+            background-color: #ADD8E6; /* Light blue background */
         }
-        input:focus {
-            border-color: #007bff;
-            outline: none;
-        }
+        
         button {
             padding: 10px 20px;
-            background-color: #007bff;
+            background-color: #0000FF; /* Blue background */
             color: white;
             border: none;
-            cursor: pointer;
             border-radius: 5px;
-            transition: background-color 0.3s;
-            width: 50%;
-            text-align: center;
-            margin: 0 auto; /* add this to center the button horizontally */
+            cursor: pointer;
+            width: 97%;
+            font-size: 16px;
         }
+        
         button:hover {
-            background-color: #0056b3;
+            background-color: #00008B; /* Dark blue background */
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgb(0,0,0);
+            background-color: rgba(0,0,0,0.4);
+        }
+        
+        .modal-content {
+            background-color: #ADD8E6; /* Light blue background */
+            margin: 15% auto;
+            padding: 20px;
+            border: 1px solid #4682B4; /* Blue border */
+            width: 20%;
+        }
+        
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+        
+        .close:hover,
+        .close:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        
+        .message, .error {
+            color: red;
+            text-align: center;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Grade Calculator</h1>
-        <form action="/calculate" method="POST">
-            <label>Number of Absences:</label>
-            <input type="number" name="absences" required>
-            
-            <label>Quiz Score:</label>
-            <input type="number" name="quiz" required>
-            
-            <label>Requirements Score:</label>
-            <input type="number" name="requirements" required>
-            
-            <label>Recitation Score:</label>
-            <input type="number" name="recitation" required>
-            
-            <label>Prelim Exam Score:</label>
-            <input type="number" name="exam" required>
-            
-            <button type="submit">Calculate</button>
-        </form>
+        <input type="number" id="absences" placeholder="Enter Number of Absences" min="0" step="1">
+        <input type="number" id="prelimExam" placeholder="Enter Prelim Exam Grade " min="0" max="100" step="0.01">
+        <input type="number" id="quizzes" placeholder="Enter Quizzes Grade " min="0" max="100" step="0.01">
+        <input type="number" id="requirements" placeholder="Enter Requirements Grade " min="0" max="100" step="0.01">
+        <input type="number" id="recitation" placeholder="Enter Recitation Grade " min="0" max="100" step="0.01">
+        <button id="calculateBtn">Calculate</button>
     </div>
-</body>
-</html>
-'''
 
-result_template = '''
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Grade Results</title>
-    <style>
-        body {
-            font-family: Times New Roman, sans-serif;
-            background-color: #39505C;
-            margin: 0;
-            padding: 0;
-        }
-        .container {
-            width: 50%;
-            margin: auto;
-            padding: 20px;
-            border: 2px solid #444;
-            border-radius: 10px;
-            background-color: #DBE4EB;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-            margin-top: 50px;
-        }
-        h1 {
-            text-align: center;
-            color: #333;
-        }
-        .result {
-            margin: 20px 0;
-            margin: 20px 0;
-            padding: 15px;
-            border: 2px solid #000;
-            border-radius: 5px;
-            background-color: #D9D9D9;
-        }
-        a {
-            display: inline-block;
-            margin-top: 20px;
-            text-align: center;
-            padding: 10px;
-            background-color: #007bff;
-            color: white;
-            border-radius: 5px;
-            text-decoration: none;
-            transition: background-color 0.3s;
-        }
-        a:hover {
-            background-color: #0056b3;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Calculated Grades</h1>
-        <div class="result">
-            <p><strong>Attendance:</strong> {{ attendance }} {% if attendance == 0 %}(Failed due to absences){% endif %}</p>
-            <p><strong>Prelim Grade:</strong> {{ prelim_grade }}</p>
-            <p><strong>Requirement for Dean's Lister:</strong></p>
-            <ul>
-                <li>Midterm: {{ target_midterm_deans_lister }}</li>
-                <li>Finals: {{ target_finals_deans_lister }}</li>
-            </ul>
-            <p><strong>Requirements to avoid failing:</strong></p>
-            <ul>
-                <li>Midterm: {{ target_midterm_avoid_fail }}</li>
-                <li>Finals: {{ target_finals_avoid_fail }}</li>
-            </ul>
+    <!-- The Modal -->
+    <div id="resultModal" class="modal">
+        <div class="modal-content">
+            <span class="close" id="closeModal">&times;</span>
+            <h2>Calculation Results</h2>
+            <p><b>Prelim Grade:</b> <span id="prelimGrade"></span></p>
+            <p><b>To pass with 75%, you need a Midterm grade of</b> <span id="midtermGrade"></span><b> and a Final grade of</b> <span id="finalGrade"></span></p>
+            <p><b>To achieve 90%, you need a Midterm grade of</b> <span id="midtermGrade2"></span><b> and a Final grade of</b> <span id="finalGrade2"></span></p>
+            <p id="passMessage" class="message"></p>
+            <p id="errorMessage" class="error"></p>
+            <button id="closeModalBtn">Close</button>
         </div>
-        <a href="/">Calculate again</a>
     </div>
+
+<py-script>
+    from pyscript import Element
+    import asyncio
+
+    def calculate_attendance_score(absences):
+        """Return attendance score (0-100) based on absences"""
+        if absences >= 4:
+            return 0  # Attendance score is zero if absences are 4 or more
+        return max(0, 100 - (absences * 10))
+
+    def calculate_overall_class_performance(quiz, requirements, recitation):
+        """Return class standing score (0-100) based on quiz, requirements, and recitation"""
+        return (0.40 * quiz) + (0.30 * requirements) + (0.30 * recitation)
+
+    def calculate_preliminary_grade(prelim_exam, attendance, class_standing):
+        """Return preliminary grade score (0-100) based on prelim exam, attendance, and class standing"""
+        return (0.60 * prelim_exam) + (0.10 * attendance) + (0.30 * class_standing)
+
+    def target_scores_for_deans_lister_or_avoid_failing(prelim_grade):
+        """Return target scores for midterm and finals to achieve Dean's Lister or avoid failing"""
+        total_terms = 3
+        remaining_terms = total_terms - 1
+        
+        targets = {}
+        targets['deans_lister'] = ((90 * total_terms) - prelim_grade) / remaining_terms
+        targets['avoid_fail'] = ((75 * total_terms) - prelim_grade) / remaining_terms
+        
+        targets['deans_lister'] = min(max(targets['deans_lister'], 90), 100)
+        targets['avoid_fail'] = min(max(targets['avoid_fail'], 75), 100)
+        
+        return (targets['deans_lister'], targets['deans_lister'], targets['avoid_fail'], targets['avoid_fail'])
+
+    async def calculate_grade(event):
+        # Hide previous results and clear messages
+        result_element = Element("resultModal").element
+        result_element.style.display = "none"
+        Element("prelimGrade").element.innerHTML = "N/A"
+        Element("midtermGrade").element.innerHTML = "N/A"
+        Element("finalGrade").element.innerHTML = "N/A"
+        Element("midtermGrade2").element.innerHTML = "N/A"
+        Element("finalGrade2").element.innerHTML = "N/A"
+        Element("passMessage").element.innerHTML = ""
+        Element("errorMessage").element.innerHTML = ""
+
+        try:
+            # Retrieve input values
+            absences = int(Element("absences").element.value.strip())
+            prelim_exam = float(Element("prelimExam").element.value.strip())
+            quizzes = float(Element("quizzes").element.value.strip())
+            requirements = float(Element("requirements").element.value.strip())
+            recitation = float(Element("recitation").element.value.strip())
+
+            # Validate input ranges
+            if absences < 0:
+                raise ValueError("Absences cannot be negative.")
+            if not (0 <= prelim_exam <= 100):
+                raise ValueError("Prelim Exam Grade must be between 0 and 100.")
+            if not (0 <= quizzes <= 100):
+                raise ValueError("Quizzes Grade must be between 0 and 100.")
+            if not (0 <= requirements <= 100):
+                raise ValueError("Requirements Grade must be between 0 and 100.")
+            if not (0 <= recitation <= 100):
+                raise ValueError("Recitation Grade must be between 0 and 100.")
+            
+            # Calculate grades
+            attendance = calculate_attendance_score(absences)
+            if attendance == 0 and absences >= 4:
+                Element("errorMessage").element.innerHTML = "FAILED due to absences."
+                result_element.style.display = "block"
+                return
+
+            class_standing = calculate_overall_class_performance(quizzes, requirements, recitation)
+            prelim_grade = calculate_preliminary_grade(prelim_exam, attendance, class_standing)
+            midterm_grade_to_avoid_fail, midterm_grade_to_achieve_deans_lister, final_grade_to_avoid_fail, final_grade_to_achieve_deans_lister = target_scores_for_deans_lister_or_avoid_failing(prelim_grade)
+            
+            # Display results
+            Element("prelimGrade").element.innerHTML = f"{prelim_grade:.2f}"
+            Element("midtermGrade").element.innerHTML = f"{midterm_grade_to_avoid_fail:.2f}"
+            Element("finalGrade").element.innerHTML = f"{final_grade_to_avoid_fail:.2f}"
+            Element("midtermGrade2").element.innerHTML = f"{midterm_grade_to_achieve_deans_lister:.2f}"
+            Element("finalGrade2").element.innerHTML = f"{final_grade_to_achieve_deans_lister:.2f}"
+
+            if prelim_grade >= 75:
+                Element("passMessage").element.innerHTML = "Congratulations! You have passed the prelims."
+            else:
+                Element("passMessage").element.innerHTML = "You need to improve your score to pass."
+
+            result_element.style.display = "block"
+
+        except ValueError as e:
+            Element("errorMessage").element.innerHTML = f"Error: {e}"
+            result_element.style.display = "block"
+
+    # Attach the event listener to the calculate button using onclick
+    Element("calculateBtn").element.onclick = calculate_grade
+
+    # Modal close event listener using onclick
+    async def close_modal(event):
+        Element("resultModal").element.style.display = "none"
+
+    Element("closeModal").element.onclick = close_modal
+    Element("closeModalBtn").element.onclick = close_modal
+</py-script>
+
 </body>
 </html>
-'''
-
-
-@app.route('/')
-def index():
-    return render_template_string(form_template)
-
-@app.route('/calculate', methods=['POST'])
-def calculate():
-    absences = int(request.form['absences'])
-    quiz = float(request.form['quiz'])
-    requirements = float(request.form['requirements'])
-    recitation = float(request.form['recitation'])
-    prelim_exam = float(request.form['exam'])
-
-    attendance = calculate_attendance(absences)
-    class_standing = calculate_class_standing(quiz, requirements, recitation)  # You can still calculate it but not display
-    prelim_grade = calculate_prelim_grade(prelim_exam, attendance, class_standing)
-
-    target_midterm_deans_lister, target_finals_deans_lister, target_midterm_avoid_fail, target_finals_avoid_fail = calculate_midterm_finals_targets(prelim_grade)
-
-    return render_template_string(result_template, 
-                                  attendance=attendance, 
-                                  prelim_grade=prelim_grade,
-                                  target_midterm_deans_lister=target_midterm_deans_lister,
-                                  target_finals_deans_lister=target_finals_deans_lister,
-                                  target_midterm_avoid_fail=target_midterm_avoid_fail,
-                                  target_finals_avoid_fail=target_finals_avoid_fail)
-
-if __name__ == '__main__':
-    app.run(debug=True)
