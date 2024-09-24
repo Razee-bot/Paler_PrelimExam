@@ -1,0 +1,227 @@
+from flask import Flask, request, render_template_string
+
+app = Flask(__name__)
+
+
+# Grade calculation functions
+def calculate_attendance(absences):
+    if absences > 4:
+        return 0  # Automatic fail for attendance
+    attendance = 100 - (absences * 10)
+    return max(0, attendance)
+
+def calculate_class_standing(quiz, requirements, recitation):
+    class_standing = (0.40 * quiz) + (0.30 * requirements) + (0.30 * recitation)
+    return class_standing
+
+def calculate_prelim_grade(prelim_exam, attendance, class_standing):
+    prelim_grade = (0.60 * prelim_exam) + (0.10 * attendance) + (0.30 * class_standing)
+    return prelim_grade
+
+def calculate_midterm_finals_targets(prelim_grade):
+    total_terms = 3
+    remaining_terms = total_terms - 1  # Only midterm and finals are left
+
+    target_midterm_deans_lister = ((90 * total_terms) - prelim_grade) / remaining_terms
+    target_finals_deans_lister = target_midterm_deans_lister  # Same for finals
+
+    target_midterm_avoid_fail = ((75 * total_terms) - prelim_grade) / remaining_terms
+    target_finals_avoid_fail = target_midterm_avoid_fail  # Same for finals
+
+    target_midterm_deans_lister = min(max(target_midterm_deans_lister, 90), 100)
+    target_finals_deans_lister = min(max(target_finals_deans_lister, 90), 100)
+    target_midterm_avoid_fail = min(max(target_midterm_avoid_fail, 75), 100)
+    target_finals_avoid_fail = min(max(target_finals_avoid_fail, 75), 100)
+
+    return (target_midterm_deans_lister, target_finals_deans_lister, 
+            target_midterm_avoid_fail, target_finals_avoid_fail)
+
+# HTML Template for the form and result
+# HTML Template for the form and result
+form_template = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grade Calculator</title>
+    <style>
+        body {
+            font-family: Times New Roman, sans-serif;
+            background-color: #39505C;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            width: 50%;
+            margin: auto;
+            padding: 50px;
+            border: 2px solid #333;
+            border-radius: 10px;
+            background-color: #DBE4EB;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            margin-top: 50px;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        input {
+            width: 95%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #4f3f3e;
+            border-radius: 5px;
+            transition: border-color 0.3s;
+        }
+        input:focus {
+            border-color: #007bff;
+            outline: none;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+            width: 50%;
+            text-align: center;
+            margin: 0 auto; /* add this to center the button horizontally */
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Grade Calculator</h1>
+        <form action="/calculate" method="POST">
+            <label>Number of Absences:</label>
+            <input type="number" name="absences" required>
+            
+            <label>Quiz Score:</label>
+            <input type="number" name="quiz" required>
+            
+            <label>Requirements Score:</label>
+            <input type="number" name="requirements" required>
+            
+            <label>Recitation Score:</label>
+            <input type="number" name="recitation" required>
+            
+            <label>Prelim Exam Score:</label>
+            <input type="number" name="exam" required>
+            
+            <button type="submit">Calculate</button>
+        </form>
+    </div>
+</body>
+</html>
+'''
+
+result_template = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grade Results</title>
+    <style>
+        body {
+            font-family: Times New Roman, sans-serif;
+            background-color: #39505C;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            width: 50%;
+            margin: auto;
+            padding: 20px;
+            border: 2px solid #444;
+            border-radius: 10px;
+            background-color: #DBE4EB;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            margin-top: 50px;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .result {
+            margin: 20px 0;
+            margin: 20px 0;
+            padding: 15px;
+            border: 2px solid #000;
+            border-radius: 5px;
+            background-color: #D9D9D9;
+        }
+        a {
+            display: inline-block;
+            margin-top: 20px;
+            text-align: center;
+            padding: 10px;
+            background-color: #007bff;
+            color: white;
+            border-radius: 5px;
+            text-decoration: none;
+            transition: background-color 0.3s;
+        }
+        a:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Calculated Grades</h1>
+        <div class="result">
+            <p><strong>Attendance:</strong> {{ attendance }} {% if attendance == 0 %}(Failed due to absences){% endif %}</p>
+            <p><strong>Prelim Grade:</strong> {{ prelim_grade }}</p>
+            <p><strong>Requirement for Dean's Lister:</strong></p>
+            <ul>
+                <li>Midterm: {{ target_midterm_deans_lister }}</li>
+                <li>Finals: {{ target_finals_deans_lister }}</li>
+            </ul>
+            <p><strong>Requirements to avoid failing:</strong></p>
+            <ul>
+                <li>Midterm: {{ target_midterm_avoid_fail }}</li>
+                <li>Finals: {{ target_finals_avoid_fail }}</li>
+            </ul>
+        </div>
+        <a href="/">Calculate again</a>
+    </div>
+</body>
+</html>
+'''
+
+
+@app.route('/')
+def index():
+    return render_template_string(form_template)
+
+@app.route('/calculate', methods=['POST'])
+def calculate():
+    absences = int(request.form['absences'])
+    quiz = float(request.form['quiz'])
+    requirements = float(request.form['requirements'])
+    recitation = float(request.form['recitation'])
+    prelim_exam = float(request.form['exam'])
+
+    attendance = calculate_attendance(absences)
+    class_standing = calculate_class_standing(quiz, requirements, recitation)  # You can still calculate it but not display
+    prelim_grade = calculate_prelim_grade(prelim_exam, attendance, class_standing)
+
+    target_midterm_deans_lister, target_finals_deans_lister, target_midterm_avoid_fail, target_finals_avoid_fail = calculate_midterm_finals_targets(prelim_grade)
+
+    return render_template_string(result_template, 
+                                  attendance=attendance, 
+                                  prelim_grade=prelim_grade,
+                                  target_midterm_deans_lister=target_midterm_deans_lister,
+                                  target_finals_deans_lister=target_finals_deans_lister,
+                                  target_midterm_avoid_fail=target_midterm_avoid_fail,
+                                  target_finals_avoid_fail=target_finals_avoid_fail)
+
+if __name__ == '__main__':
+    app.run(debug=True)
